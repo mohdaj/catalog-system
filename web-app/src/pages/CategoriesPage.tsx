@@ -11,7 +11,7 @@ export default function CategoriesPage() {
   const [parentId, setParentId] = useState<string | undefined>();
   const [form, setForm] = useState({ name: '', description: '', labelEn: '', labelAr: '' });
   const [editId, setEditId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ name: '', description: '', labelEn: '', labelAr: '' });
+  const [editForm, setEditForm] = useState({ name: '', description: '', labelEn: '', labelAr: '', parent_id: '' });
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
   const [attrs, setAttrs] = useState<AttributeDefinition[]>([]);
   const [ancestors, setAncestors] = useState<Category[]>([]);
@@ -39,14 +39,24 @@ export default function CategoriesPage() {
     setForm({ name: '', description: '', labelEn: '', labelAr: '' }); setShowForm(false); setParentId(undefined); reload();
   };
 
+  // Flat list of all categories for parent selector
+  const allCatsFlat = (() => {
+    const f: Category[] = [];
+    const walk = (ns: Category[]) => ns.forEach(n => { f.push(n); if (n.children) walk(n.children); });
+    walk(tree); return f;
+  })();
+
   const startEdit = (c: Category) => {
     setEditId(c.id);
-    setEditForm({ name: c.name, description: c.description || '', labelEn: c.labels?.en || '', labelAr: c.labels?.ar || '' });
+    setEditForm({ name: c.name, description: c.description || '', labelEn: c.labels?.en || '', labelAr: c.labels?.ar || '', parent_id: c.parent_id || '' });
   };
 
   const saveEdit = async () => {
     if (!editId) return;
-    await updateCategory(editId, { name: editForm.name, description: editForm.description, labels: mkLabels(editForm.labelEn, editForm.labelAr) ?? {} });
+    const payload: any = { name: editForm.name, description: editForm.description, labels: mkLabels(editForm.labelEn, editForm.labelAr) ?? {} };
+    // Send parent_id: null to make root, or a UUID to reparent
+    payload.parent_id = editForm.parent_id || null;
+    await updateCategory(editId, payload);
     setEditId(null); reload();
   };
 
@@ -112,7 +122,7 @@ export default function CategoriesPage() {
             <CatTree nodes={tree} onAddChild={pid => { setParentId(pid); setShowForm(true); }}
               onDelete={async id => { if (confirm('Deactivate?')) { await deleteCategory(id); reload(); } }}
               onEdit={startEdit} onSelect={loadAttrs} editId={editId} editForm={editForm}
-              setEditForm={setEditForm} onSave={saveEdit} onCancel={() => setEditId(null)} selId={selectedCatId} depth={0} />
+              setEditForm={setEditForm} onSave={saveEdit} onCancel={() => setEditId(null)} selId={selectedCatId} allCats={allCatsFlat} depth={0} />
           )}
         </div>
       </div>
@@ -190,7 +200,7 @@ export default function CategoriesPage() {
   );
 }
 
-function CatTree({ nodes, onAddChild, onDelete, onEdit, onSelect, editId, editForm, setEditForm, onSave, onCancel, selId, depth }: any) {
+function CatTree({ nodes, onAddChild, onDelete, onEdit, onSelect, editId, editForm, setEditForm, onSave, onCancel, selId, allCats, depth }: any) {
   return (
     <ul className={depth > 0 ? 'ml-5 border-l border-gray-200 pl-3' : ''}>
       {nodes.map((c: Category) => (
@@ -199,6 +209,10 @@ function CatTree({ nodes, onAddChild, onDelete, onEdit, onSelect, editId, editFo
             <div className="bg-yellow-50 border border-yellow-200 rounded p-2 space-y-1">
               <input value={editForm.name} onChange={(e: any) => setEditForm({ ...editForm, name: e.target.value })} className="w-full border rounded px-2 py-1 text-sm" />
               <input placeholder="Description" value={editForm.description} onChange={(e: any) => setEditForm({ ...editForm, description: e.target.value })} className="w-full border rounded px-2 py-1 text-sm" />
+              <select value={editForm.parent_id} onChange={(e: any) => setEditForm({ ...editForm, parent_id: e.target.value })} className="w-full border rounded px-2 py-1 text-sm">
+                <option value="">(Root — no parent)</option>
+                {allCats.filter((cat: Category) => cat.id !== c.id).map((cat: Category) => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+              </select>
               <div className="grid grid-cols-2 gap-1">
                 <input placeholder="EN" value={editForm.labelEn} onChange={(e: any) => setEditForm({ ...editForm, labelEn: e.target.value })} className="border rounded px-2 py-1 text-sm" />
                 <input placeholder="AR" value={editForm.labelAr} onChange={(e: any) => setEditForm({ ...editForm, labelAr: e.target.value })} className="border rounded px-2 py-1 text-sm" dir="rtl" />
@@ -221,7 +235,7 @@ function CatTree({ nodes, onAddChild, onDelete, onEdit, onSelect, editId, editFo
               </span>
             </div>
           )}
-          {c.children?.length > 0 && <CatTree nodes={c.children} onAddChild={onAddChild} onDelete={onDelete} onEdit={onEdit} onSelect={onSelect} editId={editId} editForm={editForm} setEditForm={setEditForm} onSave={onSave} onCancel={onCancel} selId={selId} depth={depth + 1} />}
+          {c.children?.length > 0 && <CatTree nodes={c.children} onAddChild={onAddChild} onDelete={onDelete} onEdit={onEdit} onSelect={onSelect} editId={editId} editForm={editForm} setEditForm={setEditForm} onSave={onSave} onCancel={onCancel} selId={selId} allCats={allCats} depth={depth + 1} />}
         </li>
       ))}
     </ul>

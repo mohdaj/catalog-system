@@ -121,10 +121,15 @@ async def update_product(
     product = await get_product(db, product_id)
     update_data = data.model_dump(exclude_unset=True)
 
-    # If category or attributes changed, re-validate
-    category_id = update_data.get("category_id", product.category_id)
-    if "attributes" in update_data:
-        errors = await validate_product_attributes(db, category_id, update_data["attributes"])
+    # Validate new category exists if changing
+    new_category_id = update_data.get("category_id", product.category_id)
+    if "category_id" in update_data and update_data["category_id"]:
+        await get_category(db, update_data["category_id"])
+
+    # Re-validate attributes if category or attributes changed
+    if "attributes" in update_data or "category_id" in update_data:
+        attrs_to_validate = update_data.get("attributes", product.attributes)
+        errors = await validate_product_attributes(db, new_category_id, attrs_to_validate)
         if errors:
             raise HTTPException(status_code=400, detail={"attribute_errors": errors})
 

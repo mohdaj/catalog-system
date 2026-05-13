@@ -28,7 +28,7 @@ export default function ProductsPage() {
 
   // Edit / Detail / Tags / Images modals
   const [editProduct, setEditProduct] = useState<Product | null>(null);
-  const [editForm, setEditForm] = useState({ name: '', description: '', base_price: '', status: '', labelEn: '', labelAr: '' });
+  const [editForm, setEditForm] = useState({ name: '', description: '', base_price: '', status: '', labelEn: '', labelAr: '', category_id: '' });
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [tagProduct, setTagProduct] = useState<Product | null>(null);
   const [newTagName, setNewTagName] = useState('');
@@ -89,15 +89,19 @@ export default function ProductsPage() {
 
   const startEdit = (p: Product) => {
     setEditProduct(p);
-    setEditForm({ name: p.name, description: p.description || '', base_price: String(p.base_price), status: p.status, labelEn: p.labels?.en || '', labelAr: p.labels?.ar || '' });
+    setEditForm({ name: p.name, description: p.description || '', base_price: String(p.base_price), status: p.status, labelEn: p.labels?.en || '', labelAr: p.labels?.ar || '', category_id: p.category_id });
   };
 
   const saveEdit = async () => {
     if (!editProduct) return;
-    await updateProduct(editProduct.id, {
+    const payload: any = {
       name: editForm.name, description: editForm.description, base_price: parseFloat(editForm.base_price),
       status: editForm.status, labels: mkLabels(editForm.labelEn, editForm.labelAr) ?? {},
-    });
+    };
+    if (editForm.category_id !== editProduct.category_id) {
+      payload.category_id = editForm.category_id;
+    }
+    await updateProduct(editProduct.id, payload);
     setEditProduct(null); reload();
   };
 
@@ -243,6 +247,10 @@ export default function ProductsPage() {
         <Modal onClose={() => setEditProduct(null)} title={`Edit: ${editProduct.name}`}>
           <input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" />
           <input placeholder="Description" value={editForm.description} onChange={e => setEditForm({ ...editForm, description: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" />
+          <label className="block text-xs font-medium text-gray-500">Category</label>
+          <select value={editForm.category_id} onChange={e => setEditForm({ ...editForm, category_id: e.target.value })} className="w-full border rounded px-3 py-2 text-sm">
+            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
           <input type="number" step="0.01" value={editForm.base_price} onChange={e => setEditForm({ ...editForm, base_price: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" />
           <select value={editForm.status} onChange={e => setEditForm({ ...editForm, status: e.target.value })} className="w-full border rounded px-3 py-2 text-sm">
             <option value="draft">Draft</option><option value="active">Active</option><option value="archived">Archived</option>
