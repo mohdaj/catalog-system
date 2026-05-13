@@ -3,29 +3,47 @@ import {
   getCategoryTree, createCategory, updateCategory, deleteCategory,
   getCategoryAttributes, createAttribute, updateAttribute, deleteAttribute, getCategoryAncestors,
 } from '../api/categories';
-import type { Category, AttributeDefinition } from '../types';
+import { createProduct, listProducts } from '../api/products';
+import type { Category, AttributeDefinition, Product } from '../types';
+
+type PanelMode = 'view' | 'edit' | 'add-sub' | 'add-product';
 
 export default function CategoriesPage() {
   const [tree, setTree] = useState<Category[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  const [parentId, setParentId] = useState<string | undefined>();
-  const [form, setForm] = useState({ name: '', description: '', labelEn: '', labelAr: '' });
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ name: '', description: '', labelEn: '', labelAr: '', parent_id: '' });
-  const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
-  const [attrs, setAttrs] = useState<AttributeDefinition[]>([]);
+  const [selected, setSelected] = useState<Category | null>(null);
   const [ancestors, setAncestors] = useState<Category[]>([]);
+  const [attrs, setAttrs] = useState<AttributeDefinition[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [panelMode, setPanelMode] = useState<PanelMode>('view');
+
+  // Forms
+  const [subForm, setSubForm] = useState({ name: '', description: '', labelEn: '', labelAr: '' });
+  const [editForm, setEditForm] = useState({ name: '', description: '', labelEn: '', labelAr: '', parent_id: '' });
+  const [prodForm, setProdForm] = useState({ name: '', description: '', base_price: '', status: 'draft', labelEn: '', labelAr: '' });
+  const [prodAttrs, setProdAttrs] = useState<Record<string, any>>({});
   const [attrForm, setAttrForm] = useState({ name: '', attribute_type: 'text', is_required: false, is_filterable: false, options: '', labelEn: '', labelAr: '' });
   const [editAttrId, setEditAttrId] = useState<string | null>(null);
   const [editAttrForm, setEditAttrForm] = useState({ name: '', is_required: false, is_filterable: false, options: '' });
 
+  // Root add form
+  const [showRootForm, setShowRootForm] = useState(false);
+  const [rootForm, setRootForm] = useState({ name: '', description: '', labelEn: '', labelAr: '' });
+
   const reload = () => getCategoryTree().then(setTree);
   useEffect(() => { reload(); }, []);
 
-  const loadAttrs = (catId: string) => {
-    setSelectedCatId(catId);
-    getCategoryAttributes(catId).then(setAttrs);
-    getCategoryAncestors(catId).then(setAncestors);
+  const allCatsFlat = (() => {
+    const f: Category[] = [];
+    const walk = (ns: Category[]) => ns.forEach(n => { f.push(n); if (n.children) walk(n.children); });
+    walk(tree); return f;
+  })();
+
+  const selectCategory = async (cat: Category) => {
+    setSelected(cat);
+    setPanelMode('view');
+    getCategoryAttributes(cat.id).then(setAttrs);
+    getCategoryAncestors(cat.id).then(setAncestors);
+    listProducts({ category_id: cat.id, limit: 50 }).then(res => setProducts(res.items));
   };
 
   const mkLabels = (en: string, ar: string) => {
@@ -33,209 +51,294 @@ export default function CategoriesPage() {
     return Object.keys(l).length ? l : undefined;
   };
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleCreateRoot = async (e: React.FormEvent) => {
     e.preventDefault();
-    await createCategory({ name: form.name, description: form.description || undefined, parent_id: parentId, labels: mkLabels(form.labelEn, form.labelAr) });
-    setForm({ name: '', description: '', labelEn: '', labelAr: '' }); setShowForm(false); setParentId(undefined); reload();
+    await createCategory({ name: rootForm.name, description: rootForm.description || undefined, labels: mkLabels(rootForm.labelEn, rootForm.labelAr) });
+    setRootForm({ name: '', description: '', labelEn: '', labelAr: '' }); setShowRootForm(false); reload();
   };
 
-  // Flat list of all categories for parent selector
-  const allCatsFlat = (() => {
-    const f: Category[] = [];
-    const walk = (ns: Category[]) => ns.forEach(n => { f.push(n); if (n.children) walk(n.children); });
-    walk(tree); return f;
-  })();
+  const handleCreateSub = async (e: React.FormEvent) => {
+    e.preventDefault(); if (!selected) return;
+    await createCategory({ name: subForm.name, description: subForm.description || undefined, parent_id: selected.id, labels: mkLabels(subForm.labelEn, subForm.labelAr) });
+    setSubForm({ name: '', description: '', labelEn: '', labelAr: '' }); setPanelMode('view'); reload();
+    // Re-select to refresh
+    const updated = await getCategoryTree();
+    setTree(updated);
+    selectCategory(selected);
+  };
 
-  const startEdit = (c: Category) => {
-    setEditId(c.id);
-    setEditForm({ name: c.name, description: c.description || '', labelEn: c.labels?.en || '', labelAr: c.labels?.ar || '', parent_id: c.parent_id || '' });
+  const startEdit = () => {
+    if (!selected) return;
+    setEditForm({ name: selected.name, description: selected.description || '', labelEn: selected.labels?.en || '', labelAr: selected.labels?.ar || '', parent_id: selected.parent_id || '' });
+    setPanelMode('edit');
   };
 
   const saveEdit = async () => {
-    if (!editId) return;
+    if (!selected) return;
     const payload: any = { name: editForm.name, description: editForm.description, labels: mkLabels(editForm.labelEn, editForm.labelAr) ?? {} };
-    // Send parent_id: null to make root, or a UUID to reparent
     payload.parent_id = editForm.parent_id || null;
-    await updateCategory(editId, payload);
-    setEditId(null); reload();
+    await updateCategory(selected.id, payload);
+    setPanelMode('view'); reload();
+  };
+
+  const handleCreateProduct = async (e: React.FormEvent) => {
+    e.preventDefault(); if (!selected) return;
+    await createProduct({
+      name: prodForm.name, description: prodForm.description || undefined, category_id: selected.id,
+      base_price: parseFloat(prodForm.base_price), status: prodForm.status, labels: mkLabels(prodForm.labelEn, prodForm.labelAr),
+      attributes: Object.keys(prodAttrs).length ? prodAttrs : undefined,
+    });
+    setProdForm({ name: '', description: '', base_price: '', status: 'draft', labelEn: '', labelAr: '' });
+    setProdAttrs({}); setPanelMode('view');
+    listProducts({ category_id: selected.id, limit: 50 }).then(res => setProducts(res.items));
   };
 
   const handleAddAttr = async (e: React.FormEvent) => {
-    e.preventDefault(); if (!selectedCatId) return;
+    e.preventDefault(); if (!selected) return;
     const opts = attrForm.options.trim() ? attrForm.options.split(',').map(s => s.trim()) : undefined;
-    await createAttribute(selectedCatId, {
-      name: attrForm.name, attribute_type: attrForm.attribute_type,
-      is_required: attrForm.is_required, options: opts,
-      labels: mkLabels(attrForm.labelEn, attrForm.labelAr),
-    });
+    await createAttribute(selected.id, { name: attrForm.name, attribute_type: attrForm.attribute_type, is_required: attrForm.is_required, options: opts, labels: mkLabels(attrForm.labelEn, attrForm.labelAr) });
     setAttrForm({ name: '', attribute_type: 'text', is_required: false, is_filterable: false, options: '', labelEn: '', labelAr: '' });
-    loadAttrs(selectedCatId);
-  };
-
-  const startEditAttr = (a: AttributeDefinition) => {
-    setEditAttrId(a.id);
-    setEditAttrForm({ name: a.name, is_required: a.is_required, is_filterable: a.is_filterable, options: a.options?.join(', ') || '' });
+    getCategoryAttributes(selected.id).then(setAttrs);
   };
 
   const saveEditAttr = async () => {
-    if (!editAttrId || !selectedCatId) return;
+    if (!editAttrId || !selected) return;
     const opts = editAttrForm.options.trim() ? editAttrForm.options.split(',').map(s => s.trim()) : undefined;
-    await updateAttribute(selectedCatId, editAttrId, { name: editAttrForm.name, is_required: editAttrForm.is_required, is_filterable: editAttrForm.is_filterable, options: opts });
-    setEditAttrId(null); loadAttrs(selectedCatId);
+    await updateAttribute(selected.id, editAttrId, { name: editAttrForm.name, is_required: editAttrForm.is_required, is_filterable: editAttrForm.is_filterable, options: opts });
+    setEditAttrId(null); getCategoryAttributes(selected.id).then(setAttrs);
   };
 
-  const selectedCatName = (() => {
-    const find = (nodes: Category[]): string | null => {
-      for (const n of nodes) {
-        if (n.id === selectedCatId) return n.name;
-        if (n.children) { const r = find(n.children); if (r) return r; }
-      }
-      return null;
-    };
-    return find(tree);
-  })();
+  const breadcrumb = ancestors.map(a => a.name).concat(selected ? [selected.name] : []).join(' > ');
 
   return (
-    <div className="flex gap-6">
-      <div className="flex-1">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold">Categories</h1>
-          <button onClick={() => { setParentId(undefined); setShowForm(true); }} className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">+ Root Category</button>
+    <div className="flex gap-6 h-[calc(100vh-3rem)]">
+      {/* LEFT: Tree */}
+      <div className="w-80 shrink-0 overflow-auto">
+        <div className="flex items-center justify-between mb-3">
+          <h1 className="text-lg font-bold">Catalog</h1>
+          <button onClick={() => setShowRootForm(!showRootForm)} className="bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700">+ Root</button>
         </div>
-        {showForm && (
-          <form onSubmit={handleCreate} className="bg-white border rounded p-4 mb-4 space-y-2">
-            <h3 className="font-semibold text-sm">{parentId ? 'New Subcategory' : 'New Root Category'}</h3>
-            <input placeholder="Name *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="w-full border rounded px-3 py-1.5 text-sm" required />
-            <input placeholder="Description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="w-full border rounded px-3 py-1.5 text-sm" />
-            <div className="grid grid-cols-2 gap-2">
-              <input placeholder="Label (EN)" value={form.labelEn} onChange={e => setForm({ ...form, labelEn: e.target.value })} className="border rounded px-3 py-1.5 text-sm" />
-              <input placeholder="Label (AR)" value={form.labelAr} onChange={e => setForm({ ...form, labelAr: e.target.value })} className="border rounded px-3 py-1.5 text-sm" dir="rtl" />
+        {showRootForm && (
+          <form onSubmit={handleCreateRoot} className="bg-white border rounded p-3 mb-3 space-y-1.5">
+            <input placeholder="Name *" value={rootForm.name} onChange={e => setRootForm({ ...rootForm, name: e.target.value })} className="w-full border rounded px-2 py-1 text-sm" required />
+            <input placeholder="Description" value={rootForm.description} onChange={e => setRootForm({ ...rootForm, description: e.target.value })} className="w-full border rounded px-2 py-1 text-sm" />
+            <div className="grid grid-cols-2 gap-1">
+              <input placeholder="EN" value={rootForm.labelEn} onChange={e => setRootForm({ ...rootForm, labelEn: e.target.value })} className="border rounded px-2 py-1 text-sm" />
+              <input placeholder="AR" value={rootForm.labelAr} onChange={e => setRootForm({ ...rootForm, labelAr: e.target.value })} className="border rounded px-2 py-1 text-sm" dir="rtl" />
             </div>
-            <div className="flex gap-2">
-              <button type="submit" className="bg-green-600 text-white px-3 py-1.5 rounded text-sm">Create</button>
-              <button type="button" onClick={() => setShowForm(false)} className="bg-gray-200 px-3 py-1.5 rounded text-sm">Cancel</button>
+            <div className="flex gap-1">
+              <button type="submit" className="bg-green-600 text-white px-2 py-1 rounded text-xs">Create</button>
+              <button type="button" onClick={() => setShowRootForm(false)} className="bg-gray-200 px-2 py-1 rounded text-xs">Cancel</button>
             </div>
           </form>
         )}
-        <div className="bg-white border rounded p-4">
-          {tree.length === 0 ? <p className="text-gray-500 text-sm">No categories yet.</p> : (
-            <CatTree nodes={tree} onAddChild={pid => { setParentId(pid); setShowForm(true); }}
-              onDelete={async id => { if (confirm('Deactivate?')) { await deleteCategory(id); reload(); } }}
-              onEdit={startEdit} onSelect={loadAttrs} editId={editId} editForm={editForm}
-              setEditForm={setEditForm} onSave={saveEdit} onCancel={() => setEditId(null)} selId={selectedCatId} allCats={allCatsFlat} depth={0} />
+        <div className="bg-white border rounded p-3">
+          {tree.length === 0 ? <p className="text-gray-500 text-sm">No categories.</p> : (
+            <TreeView nodes={tree} selectedId={selected?.id || null} onSelect={(c: Category) => selectCategory(c)} depth={0} />
           )}
         </div>
       </div>
 
-      {/* Attributes panel */}
-      {selectedCatId && (
-        <div className="w-[420px] bg-white border rounded p-4 h-fit sticky top-6">
-          {/* Breadcrumb */}
-          <div className="text-xs text-gray-400 mb-1">
-            {ancestors.map(a => a.name).concat(selectedCatName ? [selectedCatName] : []).join(' > ')}
-          </div>
-          <h2 className="font-bold mb-3">Attributes — {selectedCatName}</h2>
+      {/* RIGHT: Detail panel */}
+      <div className="flex-1 overflow-auto">
+        {!selected ? (
+          <div className="flex items-center justify-center h-full text-gray-400">Select a category from the tree</div>
+        ) : (
+          <div className="space-y-4">
+            {/* Breadcrumb + actions */}
+            <div className="text-xs text-gray-400">{breadcrumb}</div>
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-bold flex-1">{selected.name}</h2>
+              <button onClick={() => { setPanelMode('add-sub'); setSubForm({ name: '', description: '', labelEn: '', labelAr: '' }); }} className={`px-3 py-1.5 rounded text-xs ${panelMode === 'add-sub' ? 'bg-green-600 text-white' : 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100'}`}>+ Subcategory</button>
+              <button onClick={() => { setPanelMode('add-product'); setProdForm({ name: '', description: '', base_price: '', status: 'draft', labelEn: '', labelAr: '' }); setProdAttrs({}); }} className={`px-3 py-1.5 rounded text-xs ${panelMode === 'add-product' ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'}`}>+ Product</button>
+              <button onClick={startEdit} className="px-3 py-1.5 rounded text-xs bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100">Edit</button>
+              <button onClick={async () => { if (confirm('Deactivate?')) { await deleteCategory(selected.id); setSelected(null); reload(); } }} className="px-3 py-1.5 rounded text-xs bg-red-50 text-red-700 border border-red-200 hover:bg-red-100">Deactivate</button>
+            </div>
 
-          {attrs.length === 0 ? <p className="text-gray-500 text-sm mb-3">No attributes.</p> : (
-            <ul className="space-y-2 mb-4">{attrs.map(a => (
-              <li key={a.id} className="border-b pb-2">
-                {editAttrId === a.id ? (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded p-2 space-y-1 text-sm">
-                    <input value={editAttrForm.name} onChange={e => setEditAttrForm({ ...editAttrForm, name: e.target.value })} className="w-full border rounded px-2 py-1" />
-                    {a.options && <input placeholder="Options" value={editAttrForm.options} onChange={e => setEditAttrForm({ ...editAttrForm, options: e.target.value })} className="w-full border rounded px-2 py-1" />}
-                    <div className="flex gap-3">
-                      <label className="flex items-center gap-1"><input type="checkbox" checked={editAttrForm.is_required} onChange={e => setEditAttrForm({ ...editAttrForm, is_required: e.target.checked })} /> Required</label>
-                      <label className="flex items-center gap-1"><input type="checkbox" checked={editAttrForm.is_filterable} onChange={e => setEditAttrForm({ ...editAttrForm, is_filterable: e.target.checked })} /> Filterable</label>
-                    </div>
-                    <div className="flex gap-1">
-                      <button onClick={saveEditAttr} className="bg-green-600 text-white px-2 py-0.5 rounded text-xs">Save</button>
-                      <button onClick={() => setEditAttrId(null)} className="bg-gray-200 px-2 py-0.5 rounded text-xs">Cancel</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between text-sm">
-                    <div>
-                      <span className="font-medium">{a.name}</span> <span className="text-gray-400">({a.attribute_type})</span>
-                      {a.is_required && <span className="text-red-500 ml-1">*req</span>}
-                      {a.is_filterable && <span className="text-blue-500 ml-1">filterable</span>}
-                      {a.inherited_from_category_id && <span className="text-xs text-purple-500 ml-1">inherited</span>}
-                      {a.options && <div className="text-xs text-gray-400">[{a.options.join(', ')}]</div>}
-                      {a.labels && <div className="text-xs text-gray-400">{Object.entries(a.labels).map(([k, v]) => `${k}:${v}`).join(' | ')}</div>}
-                    </div>
-                    {!a.inherited_from_category_id && (
-                      <span className="flex gap-1.5">
-                        <button onClick={() => startEditAttr(a)} className="text-blue-600 text-xs hover:underline">edit</button>
-                        <button onClick={() => { deleteAttribute(selectedCatId!, a.id).then(() => loadAttrs(selectedCatId!)); }} className="text-red-500 text-xs hover:underline">del</button>
-                      </span>
-                    )}
+            {/* Category info */}
+            {panelMode === 'view' && (
+              <div className="bg-white border rounded p-4 text-sm space-y-1">
+                <div><strong>Slug:</strong> {selected.slug}</div>
+                {selected.description && <div><strong>Description:</strong> {selected.description}</div>}
+                {selected.labels && <div><strong>Labels:</strong> {Object.entries(selected.labels).map(([k, v]) => `${k}: ${v}`).join(' | ')}</div>}
+                <div><strong>Active:</strong> {selected.is_active ? 'Yes' : 'No'}</div>
+              </div>
+            )}
+
+            {/* Edit form */}
+            {panelMode === 'edit' && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded p-4 space-y-2">
+                <h3 className="font-semibold text-sm">Edit Category</h3>
+                <input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} className="w-full border rounded px-3 py-1.5 text-sm" />
+                <input placeholder="Description" value={editForm.description} onChange={e => setEditForm({ ...editForm, description: e.target.value })} className="w-full border rounded px-3 py-1.5 text-sm" />
+                <select value={editForm.parent_id} onChange={e => setEditForm({ ...editForm, parent_id: e.target.value })} className="w-full border rounded px-3 py-1.5 text-sm">
+                  <option value="">(Root — no parent)</option>
+                  {allCatsFlat.filter(c => c.id !== selected.id).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <div className="grid grid-cols-2 gap-2">
+                  <input placeholder="Label EN" value={editForm.labelEn} onChange={e => setEditForm({ ...editForm, labelEn: e.target.value })} className="border rounded px-3 py-1.5 text-sm" />
+                  <input placeholder="Label AR" value={editForm.labelAr} onChange={e => setEditForm({ ...editForm, labelAr: e.target.value })} className="border rounded px-3 py-1.5 text-sm" dir="rtl" />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={saveEdit} className="bg-green-600 text-white px-3 py-1.5 rounded text-sm">Save</button>
+                  <button onClick={() => setPanelMode('view')} className="bg-gray-200 px-3 py-1.5 rounded text-sm">Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {/* Add subcategory form */}
+            {panelMode === 'add-sub' && (
+              <form onSubmit={handleCreateSub} className="bg-green-50 border border-green-200 rounded p-4 space-y-2">
+                <h3 className="font-semibold text-sm">New Subcategory under "{selected.name}"</h3>
+                <input placeholder="Name *" value={subForm.name} onChange={e => setSubForm({ ...subForm, name: e.target.value })} className="w-full border rounded px-3 py-1.5 text-sm" required />
+                <input placeholder="Description" value={subForm.description} onChange={e => setSubForm({ ...subForm, description: e.target.value })} className="w-full border rounded px-3 py-1.5 text-sm" />
+                <div className="grid grid-cols-2 gap-2">
+                  <input placeholder="Label EN" value={subForm.labelEn} onChange={e => setSubForm({ ...subForm, labelEn: e.target.value })} className="border rounded px-3 py-1.5 text-sm" />
+                  <input placeholder="Label AR" value={subForm.labelAr} onChange={e => setSubForm({ ...subForm, labelAr: e.target.value })} className="border rounded px-3 py-1.5 text-sm" dir="rtl" />
+                </div>
+                <div className="flex gap-2">
+                  <button type="submit" className="bg-green-600 text-white px-3 py-1.5 rounded text-sm">Create Subcategory</button>
+                  <button type="button" onClick={() => setPanelMode('view')} className="bg-gray-200 px-3 py-1.5 rounded text-sm">Cancel</button>
+                </div>
+              </form>
+            )}
+
+            {/* Add product form */}
+            {panelMode === 'add-product' && (
+              <form onSubmit={handleCreateProduct} className="bg-indigo-50 border border-indigo-200 rounded p-4 space-y-2">
+                <h3 className="font-semibold text-sm">New Product in "{selected.name}"</h3>
+                <input placeholder="Product name *" value={prodForm.name} onChange={e => setProdForm({ ...prodForm, name: e.target.value })} className="w-full border rounded px-3 py-1.5 text-sm" required />
+                <input placeholder="Description" value={prodForm.description} onChange={e => setProdForm({ ...prodForm, description: e.target.value })} className="w-full border rounded px-3 py-1.5 text-sm" />
+                <input placeholder="Price *" type="number" step="0.01" value={prodForm.base_price} onChange={e => setProdForm({ ...prodForm, base_price: e.target.value })} className="w-full border rounded px-3 py-1.5 text-sm" required />
+                <select value={prodForm.status} onChange={e => setProdForm({ ...prodForm, status: e.target.value })} className="w-full border rounded px-3 py-1.5 text-sm">
+                  <option value="draft">Draft</option><option value="active">Active</option><option value="archived">Archived</option>
+                </select>
+                <div className="grid grid-cols-2 gap-2">
+                  <input placeholder="Label EN" value={prodForm.labelEn} onChange={e => setProdForm({ ...prodForm, labelEn: e.target.value })} className="border rounded px-3 py-1.5 text-sm" />
+                  <input placeholder="Label AR" value={prodForm.labelAr} onChange={e => setProdForm({ ...prodForm, labelAr: e.target.value })} className="border rounded px-3 py-1.5 text-sm" dir="rtl" />
+                </div>
+                {/* Dynamic attributes */}
+                {attrs.length > 0 && (
+                  <div className="border-t pt-2 space-y-1.5">
+                    <h4 className="text-xs font-semibold text-gray-500">Attributes</h4>
+                    {attrs.map(a => (
+                      <div key={a.slug} className="flex items-center gap-2 text-sm">
+                        <label className="w-28 truncate text-xs">{a.name}{a.is_required && <span className="text-red-500">*</span>}</label>
+                        {a.attribute_type === 'boolean' ? (
+                          <input type="checkbox" checked={!!prodAttrs[a.slug]} onChange={e => setProdAttrs({ ...prodAttrs, [a.slug]: e.target.checked })} />
+                        ) : a.attribute_type === 'select' ? (
+                          <select value={prodAttrs[a.slug] || ''} onChange={e => setProdAttrs({ ...prodAttrs, [a.slug]: e.target.value })} className="flex-1 border rounded px-2 py-1 text-xs">
+                            <option value="">—</option>{a.options?.map(o => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        ) : a.attribute_type === 'number' ? (
+                          <input type="number" step="any" value={prodAttrs[a.slug] || ''} onChange={e => setProdAttrs({ ...prodAttrs, [a.slug]: parseFloat(e.target.value) || '' })} className="flex-1 border rounded px-2 py-1 text-xs" />
+                        ) : (
+                          <input value={prodAttrs[a.slug] || ''} onChange={e => setProdAttrs({ ...prodAttrs, [a.slug]: e.target.value })} className="flex-1 border rounded px-2 py-1 text-xs" />
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
-              </li>
-            ))}</ul>
-          )}
-
-          <form onSubmit={handleAddAttr} className="space-y-2 border-t pt-3">
-            <h3 className="text-sm font-semibold">Add Attribute</h3>
-            <input placeholder="Name" value={attrForm.name} onChange={e => setAttrForm({ ...attrForm, name: e.target.value })} className="w-full border rounded px-2 py-1 text-sm" required />
-            <select value={attrForm.attribute_type} onChange={e => setAttrForm({ ...attrForm, attribute_type: e.target.value })} className="w-full border rounded px-2 py-1 text-sm">
-              <option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option>
-              <option value="select">Select</option><option value="multi_select">Multi Select</option>
-            </select>
-            {['select', 'multi_select'].includes(attrForm.attribute_type) && (
-              <input placeholder="Options (comma separated)" value={attrForm.options} onChange={e => setAttrForm({ ...attrForm, options: e.target.value })} className="w-full border rounded px-2 py-1 text-sm" />
+                <div className="flex gap-2">
+                  <button type="submit" className="bg-indigo-600 text-white px-3 py-1.5 rounded text-sm">Create Product</button>
+                  <button type="button" onClick={() => setPanelMode('view')} className="bg-gray-200 px-3 py-1.5 rounded text-sm">Cancel</button>
+                </div>
+              </form>
             )}
-            <div className="flex gap-3 text-sm">
-              <label className="flex items-center gap-1"><input type="checkbox" checked={attrForm.is_required} onChange={e => setAttrForm({ ...attrForm, is_required: e.target.checked })} /> Required</label>
-              <label className="flex items-center gap-1"><input type="checkbox" checked={attrForm.is_filterable} onChange={e => setAttrForm({ ...attrForm, is_filterable: e.target.checked })} /> Filterable</label>
+
+            {/* Attributes section */}
+            <div className="bg-white border rounded p-4">
+              <h3 className="font-bold text-sm mb-2">Attributes ({attrs.length})</h3>
+              {attrs.length === 0 ? <p className="text-gray-400 text-xs mb-2">None defined.</p> : (
+                <ul className="space-y-1.5 mb-3">{attrs.map(a => (
+                  <li key={a.id} className="border-b pb-1.5">
+                    {editAttrId === a.id ? (
+                      <div className="bg-yellow-50 rounded p-2 space-y-1 text-sm">
+                        <input value={editAttrForm.name} onChange={e => setEditAttrForm({ ...editAttrForm, name: e.target.value })} className="w-full border rounded px-2 py-1" />
+                        {a.options && <input placeholder="Options" value={editAttrForm.options} onChange={e => setEditAttrForm({ ...editAttrForm, options: e.target.value })} className="w-full border rounded px-2 py-1" />}
+                        <div className="flex gap-3 text-xs">
+                          <label className="flex items-center gap-1"><input type="checkbox" checked={editAttrForm.is_required} onChange={e => setEditAttrForm({ ...editAttrForm, is_required: e.target.checked })} /> Req</label>
+                          <label className="flex items-center gap-1"><input type="checkbox" checked={editAttrForm.is_filterable} onChange={e => setEditAttrForm({ ...editAttrForm, is_filterable: e.target.checked })} /> Filter</label>
+                        </div>
+                        <div className="flex gap-1">
+                          <button onClick={saveEditAttr} className="bg-green-600 text-white px-2 py-0.5 rounded text-xs">Save</button>
+                          <button onClick={() => setEditAttrId(null)} className="bg-gray-200 px-2 py-0.5 rounded text-xs">Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between text-xs">
+                        <div>
+                          <span className="font-medium">{a.name}</span> <span className="text-gray-400">({a.attribute_type})</span>
+                          {a.is_required && <span className="text-red-500 ml-1">*</span>}
+                          {a.is_filterable && <span className="text-blue-500 ml-1">filterable</span>}
+                          {a.inherited_from_category_id && <span className="text-purple-500 ml-1">inherited</span>}
+                          {a.options && <span className="text-gray-400 ml-1">[{a.options.join(', ')}]</span>}
+                        </div>
+                        {!a.inherited_from_category_id && (
+                          <span className="flex gap-1.5">
+                            <button onClick={() => { setEditAttrId(a.id); setEditAttrForm({ name: a.name, is_required: a.is_required, is_filterable: a.is_filterable, options: a.options?.join(', ') || '' }); }} className="text-blue-600 hover:underline">edit</button>
+                            <button onClick={() => { deleteAttribute(selected.id, a.id).then(() => getCategoryAttributes(selected.id).then(setAttrs)); }} className="text-red-500 hover:underline">del</button>
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                ))}</ul>
+              )}
+              <form onSubmit={handleAddAttr} className="flex flex-wrap gap-2 items-end border-t pt-2">
+                <input placeholder="Name" value={attrForm.name} onChange={e => setAttrForm({ ...attrForm, name: e.target.value })} className="border rounded px-2 py-1 text-xs w-28" required />
+                <select value={attrForm.attribute_type} onChange={e => setAttrForm({ ...attrForm, attribute_type: e.target.value })} className="border rounded px-2 py-1 text-xs">
+                  <option value="text">Text</option><option value="number">Number</option><option value="boolean">Bool</option>
+                  <option value="select">Select</option><option value="multi_select">Multi</option>
+                </select>
+                {['select', 'multi_select'].includes(attrForm.attribute_type) && (
+                  <input placeholder="opts (a,b,c)" value={attrForm.options} onChange={e => setAttrForm({ ...attrForm, options: e.target.value })} className="border rounded px-2 py-1 text-xs w-32" />
+                )}
+                <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={attrForm.is_required} onChange={e => setAttrForm({ ...attrForm, is_required: e.target.checked })} /> Req</label>
+                <button type="submit" className="bg-blue-600 text-white px-2 py-1 rounded text-xs">+ Add</button>
+              </form>
             </div>
-            <div className="grid grid-cols-2 gap-1">
-              <input placeholder="Label EN" value={attrForm.labelEn} onChange={e => setAttrForm({ ...attrForm, labelEn: e.target.value })} className="border rounded px-2 py-1 text-sm" />
-              <input placeholder="Label AR" value={attrForm.labelAr} onChange={e => setAttrForm({ ...attrForm, labelAr: e.target.value })} className="border rounded px-2 py-1 text-sm" dir="rtl" />
+
+            {/* Products in this category */}
+            <div className="bg-white border rounded p-4">
+              <h3 className="font-bold text-sm mb-2">Products ({products.length})</h3>
+              {products.length === 0 ? <p className="text-gray-400 text-xs">No products in this category.</p> : (
+                <table className="w-full text-xs">
+                  <thead className="text-left text-gray-500"><tr><th className="pb-1">Name</th><th className="pb-1">Price</th><th className="pb-1">Status</th><th className="pb-1">Labels</th></tr></thead>
+                  <tbody>{products.map(p => (
+                    <tr key={p.id} className="border-t">
+                      <td className="py-1.5 font-medium">{p.name} <span className="text-gray-400">{p.slug}</span></td>
+                      <td className="py-1.5">${p.base_price.toFixed(2)}</td>
+                      <td className="py-1.5"><span className={`px-1.5 py-0.5 rounded ${p.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{p.status}</span></td>
+                      <td className="py-1.5 text-gray-400">{p.labels ? Object.entries(p.labels).map(([k, v]) => `${k}:${v}`).join(' | ') : '-'}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              )}
             </div>
-            <button type="submit" className="bg-blue-600 text-white px-3 py-1 rounded text-sm w-full">Add Attribute</button>
-          </form>
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-function CatTree({ nodes, onAddChild, onDelete, onEdit, onSelect, editId, editForm, setEditForm, onSave, onCancel, selId, allCats, depth }: any) {
+function TreeView({ nodes, selectedId, onSelect, depth }: { nodes: Category[]; selectedId: string | null; onSelect: (c: Category) => void; depth: number }) {
   return (
-    <ul className={depth > 0 ? 'ml-5 border-l border-gray-200 pl-3' : ''}>
-      {nodes.map((c: Category) => (
-        <li key={c.id} className="py-1">
-          {editId === c.id ? (
-            <div className="bg-yellow-50 border border-yellow-200 rounded p-2 space-y-1">
-              <input value={editForm.name} onChange={(e: any) => setEditForm({ ...editForm, name: e.target.value })} className="w-full border rounded px-2 py-1 text-sm" />
-              <input placeholder="Description" value={editForm.description} onChange={(e: any) => setEditForm({ ...editForm, description: e.target.value })} className="w-full border rounded px-2 py-1 text-sm" />
-              <select value={editForm.parent_id} onChange={(e: any) => setEditForm({ ...editForm, parent_id: e.target.value })} className="w-full border rounded px-2 py-1 text-sm">
-                <option value="">(Root — no parent)</option>
-                {allCats.filter((cat: Category) => cat.id !== c.id).map((cat: Category) => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
-              </select>
-              <div className="grid grid-cols-2 gap-1">
-                <input placeholder="EN" value={editForm.labelEn} onChange={(e: any) => setEditForm({ ...editForm, labelEn: e.target.value })} className="border rounded px-2 py-1 text-sm" />
-                <input placeholder="AR" value={editForm.labelAr} onChange={(e: any) => setEditForm({ ...editForm, labelAr: e.target.value })} className="border rounded px-2 py-1 text-sm" dir="rtl" />
-              </div>
-              <div className="flex gap-1">
-                <button onClick={onSave} className="bg-green-600 text-white px-2 py-0.5 rounded text-xs">Save</button>
-                <button onClick={onCancel} className="bg-gray-200 px-2 py-0.5 rounded text-xs">Cancel</button>
-              </div>
-            </div>
-          ) : (
-            <div className={`flex items-center gap-1.5 text-sm rounded px-1 py-0.5 ${selId === c.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
-              <span className="font-medium cursor-pointer" onClick={() => onSelect(c.id)}>{c.name}</span>
-              <span className="text-xs text-gray-400">{c.slug}</span>
-              {c.labels && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 rounded">{Object.entries(c.labels).map(([k, v]: any) => `${k}:${v}`).join(' | ')}</span>}
-              {!c.is_active && <span className="text-xs text-red-500">(off)</span>}
-              <span className="ml-auto flex gap-1.5 shrink-0">
-                <button onClick={() => onEdit(c)} className="text-xs text-blue-600 hover:underline">edit</button>
-                <button onClick={() => onAddChild(c.id)} className="text-xs text-green-600 hover:underline">+child</button>
-                <button onClick={() => onDelete(c.id)} className="text-xs text-red-500 hover:underline">off</button>
-              </span>
-            </div>
+    <ul className={depth > 0 ? 'ml-4 border-l border-gray-200 pl-2' : ''}>
+      {nodes.map(c => (
+        <li key={c.id}>
+          <div
+            onClick={() => onSelect(c)}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer text-sm ${selectedId === c.id ? 'bg-blue-100 text-blue-800 font-semibold' : 'hover:bg-gray-100'} ${!c.is_active ? 'opacity-50' : ''}`}
+          >
+            <span>{c.children && c.children.length > 0 ? '\u25B6' : '\u25CB'}</span>
+            <span className="truncate">{c.name}</span>
+            {c.labels && <span className="text-[10px] text-gray-400 truncate">{Object.values(c.labels)[0]}</span>}
+          </div>
+          {c.children && c.children.length > 0 && (
+            <TreeView nodes={c.children} selectedId={selectedId} onSelect={onSelect} depth={depth + 1} />
           )}
-          {c.children?.length > 0 && <CatTree nodes={c.children} onAddChild={onAddChild} onDelete={onDelete} onEdit={onEdit} onSelect={onSelect} editId={editId} editForm={editForm} setEditForm={setEditForm} onSave={onSave} onCancel={onCancel} selId={selId} allCats={allCats} depth={depth + 1} />}
         </li>
       ))}
     </ul>

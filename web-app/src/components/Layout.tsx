@@ -2,9 +2,9 @@ import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const navItems = [
-  { to: '/', label: 'Dashboard', icon: '\u2302' },
-  { to: '/categories', label: 'Categories', icon: '\ud83d\uddc2\ufe0f' },
-  { to: '/products', label: 'Products', icon: '\ud83d\udce6' },
+  { to: '/', label: 'Dashboard', icon: '⌂' },
+  { to: '/categories', label: 'Catalog', icon: '🗂️' },
+  { to: '/products', label: 'Products', icon: '📦' },
 ];
 
 export default function Layout() {
@@ -35,7 +35,7 @@ export default function Layout() {
                 location.pathname === '/users' ? 'bg-gray-700' : 'hover:bg-gray-800'
               }`}
             >
-              \ud83d\udc65 Users
+              👥 Users
             </Link>
           )}
         </nav>

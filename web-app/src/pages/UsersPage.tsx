@@ -8,7 +8,8 @@ export default function UsersPage() {
   const [form, setForm] = useState({ username: '', email: '', password: '', role: 'admin' });
   const [error, setError] = useState('');
   const [editUser, setEditUser] = useState<User | null>(null);
-  const [editForm, setEditForm] = useState({ email: '', role: '', is_active: true });
+  const [editForm, setEditForm] = useState({ email: '', role: '', is_active: true, password: '' });
+  const [editError, setEditError] = useState('');
 
   const reload = () => listUsers().then(setUsers);
   useEffect(() => { reload(); }, []);
@@ -23,13 +24,19 @@ export default function UsersPage() {
 
   const startEdit = (u: User) => {
     setEditUser(u);
-    setEditForm({ email: u.email, role: u.role, is_active: u.is_active });
+    setEditForm({ email: u.email, role: u.role, is_active: u.is_active, password: '' });
+    setEditError('');
   };
 
   const saveEdit = async () => {
     if (!editUser) return;
-    await updateUser(editUser.id, { email: editForm.email, role: editForm.role, is_active: editForm.is_active });
-    setEditUser(null); reload();
+    setEditError('');
+    try {
+      const payload: any = { email: editForm.email, role: editForm.role, is_active: editForm.is_active };
+      if (editForm.password.trim()) payload.password = editForm.password;
+      await updateUser(editUser.id, payload);
+      setEditUser(null); reload();
+    } catch (err: any) { setEditError(err.response?.data?.detail || 'Failed to update user'); }
   };
 
   return (
@@ -55,13 +62,15 @@ export default function UsersPage() {
         </form>
       )}
 
-      {/* Edit modal */}
       {editUser && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setEditUser(null)}>
           <div className="bg-white rounded-lg p-6 w-full max-w-md space-y-3" onClick={e => e.stopPropagation()}>
             <h2 className="text-lg font-bold">Edit: {editUser.username}</h2>
+            {editError && <div className="bg-red-100 text-red-700 p-2 rounded text-sm">{editError}</div>}
             <label className="block text-sm font-medium">Email</label>
             <input value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" />
+            <label className="block text-sm font-medium">New Password <span className="text-gray-400 font-normal">(leave empty to keep current)</span></label>
+            <input type="password" placeholder="New password (min 6 chars)" value={editForm.password} onChange={e => setEditForm({ ...editForm, password: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" />
             <label className="block text-sm font-medium">Role</label>
             <select value={editForm.role} onChange={e => setEditForm({ ...editForm, role: e.target.value })} className="w-full border rounded px-3 py-2 text-sm">
               <option value="admin">Admin</option><option value="superadmin">Superadmin</option>
@@ -82,12 +91,9 @@ export default function UsersPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-left">
             <tr>
-              <th className="px-4 py-3">Username</th>
-              <th className="px-4 py-3">Email</th>
-              <th className="px-4 py-3">Role</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Created</th>
-              <th className="px-4 py-3">Actions</th>
+              <th className="px-4 py-3">Username</th><th className="px-4 py-3">Email</th>
+              <th className="px-4 py-3">Role</th><th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Created</th><th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -95,16 +101,10 @@ export default function UsersPage() {
               <tr key={u.id} className="border-t hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium">{u.username}</td>
                 <td className="px-4 py-3">{u.email}</td>
-                <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded text-xs ${u.role === 'superadmin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{u.role}</span>
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded text-xs ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{u.is_active ? 'Active' : 'Disabled'}</span>
-                </td>
+                <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs ${u.role === 'superadmin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{u.role}</span></td>
+                <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{u.is_active ? 'Active' : 'Disabled'}</span></td>
                 <td className="px-4 py-3 text-gray-500">{new Date(u.created_at).toLocaleDateString()}</td>
-                <td className="px-4 py-3">
-                  <button onClick={() => startEdit(u)} className="text-blue-600 text-xs hover:underline">edit</button>
-                </td>
+                <td className="px-4 py-3"><button onClick={() => startEdit(u)} className="text-blue-600 text-xs hover:underline">edit</button></td>
               </tr>
             ))}
           </tbody>

@@ -37,6 +37,7 @@ class TokenResponse(BaseModel):
 
 class UserUpdate(BaseModel):
     email: Optional[str] = Field(None, min_length=5, max_length=255)
+    password: Optional[str] = Field(None, min_length=6)
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
 

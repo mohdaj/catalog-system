@@ -95,9 +95,14 @@ async def get_user_count(db: AsyncSession) -> int:
 
 
 async def update_user(db: AsyncSession, user_id: uuid.UUID, data) -> User:
-    """Update a user's email, role, or active status."""
+    """Update a user's email, role, active status, or password."""
     user = await get_user_by_id(db, user_id)
     update_data = data.model_dump(exclude_unset=True)
+
+    # Hash password if provided
+    if "password" in update_data:
+        user.hashed_password = hash_password(update_data.pop("password"))
+
     for key, value in update_data.items():
         setattr(user, key, value)
     await db.flush()
