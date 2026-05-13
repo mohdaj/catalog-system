@@ -94,6 +94,17 @@ async def get_user_count(db: AsyncSession) -> int:
     return result.scalar_one()
 
 
+async def update_user(db: AsyncSession, user_id: uuid.UUID, data) -> User:
+    """Update a user's email, role, or active status."""
+    user = await get_user_by_id(db, user_id)
+    update_data = data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(user, key, value)
+    await db.flush()
+    await db.refresh(user)
+    return user
+
+
 async def seed_superadmin(db: AsyncSession) -> None:
     """Create a default superadmin if no users exist."""
     count = await get_user_count(db)

@@ -45,3 +45,17 @@ export async function createAttribute(
   const { data } = await api.post(`/categories/${categoryId}/attributes`, payload);
   return data;
 }
+
+export async function deleteAttribute(categoryId: string, attrId: string): Promise<void> {
+  await api.delete(`/categories/${categoryId}/attributes/${attrId}`);
+}
+
+export async function getCategoryChildren(id: string): Promise<Category[]> {
+  const { data } = await api.get(`/categories/${id}/children`);
+  return data;
+}
+
+export async function getCategoryAncestors(id: string): Promise<Category[]> {
+  const { data } = await api.get(`/categories/${id}/ancestors`);
+  return data;
+}

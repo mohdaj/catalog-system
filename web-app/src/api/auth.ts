@@ -25,3 +25,11 @@ export async function listUsers(): Promise<User[]> {
   const { data } = await api.get('/auth/users');
   return data;
 }
+
+export async function updateUser(
+  id: string,
+  payload: Partial<{ email: string; role: string; is_active: boolean }>,
+): Promise<User> {
+  const { data } = await api.put(`/auth/users/${id}`, payload);
+  return data;
+}

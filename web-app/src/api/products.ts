@@ -47,3 +47,28 @@ export async function updateProduct(
 export async function deleteProduct(id: string): Promise<void> {
   await api.delete(`/products/${id}`);
 }
+
+export async function searchProducts(q: string, limit = 20): Promise<PaginatedResponse<Product>> {
+  const { data } = await api.get('/products/search', { params: { q, limit } });
+  return data;
+}
+
+// --- Tags ---
+
+export async function listTags(): Promise<{ id: string; name: string; slug: string }[]> {
+  const { data } = await api.get('/tags');
+  return data;
+}
+
+export async function createTag(name: string): Promise<{ id: string; name: string; slug: string }> {
+  const { data } = await api.post('/tags', { name });
+  return data;
+}
+
+export async function attachTag(productId: string, tagId: string): Promise<void> {
+  await api.post(`/products/${productId}/tags`, { tag_id: tagId });
+}
+
+export async function detachTag(productId: string, tagId: string): Promise<void> {
+  await api.delete(`/products/${productId}/tags/${tagId}`);
+}

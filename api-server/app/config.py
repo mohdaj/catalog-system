@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/catalog_db"
+    DATABASE_URL: str = "postgresql+asyncpg://ubg_catalog_app:9FCvNjS2TIjSX8KixqVJrynxOq@ubg-server:5432/catalog_db"
     APP_NAME: str = "Catalog System"
     DEBUG: bool = False
 

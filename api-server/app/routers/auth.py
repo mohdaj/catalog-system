@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +11,7 @@ from app.schemas.user import (
     RegisterRequest,
     TokenResponse,
     UserResponse,
+    UserUpdate,
 )
 from app.services import auth_service
 
@@ -45,3 +48,14 @@ async def list_users(
     """Only superadmins can list all users."""
     users = await auth_service.list_users(db)
     return [UserResponse.model_validate(u) for u in users]
+
+
+@router.put("/users/{user_id}", response_model=UserResponse)
+async def update_user(
+    user_id: uuid.UUID,
+    data: UserUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("superadmin")),
+):
+    """Only superadmins can update users."""
+    return await auth_service.update_user(db, user_id, data)

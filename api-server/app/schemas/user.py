@@ -35,6 +35,12 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class UserUpdate(BaseModel):
+    email: Optional[str] = Field(None, min_length=5, max_length=255)
+    role: Optional[UserRole] = None
+    is_active: Optional[bool] = None
+
+
 class UserListResponse(BaseModel):
     items: list
     total: int
