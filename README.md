@@ -119,56 +119,143 @@ The server starts at `http://localhost:8000`. On first startup, tables are auto-
 
 ## Database Schema
 
-### Entity Relationship
+### Entity Relationship Diagram
 
+```mermaid
+erDiagram
+    categories ||--o{ categories : "parent_id"
+    categories ||--o{ attribute_definitions : "category_id"
+    categories ||--o{ products : "category_id"
+    products ||--o{ product_images : "product_id"
+    products }o--o{ tags : "product_tags"
+
+    categories {
+        uuid id PK
+        varchar255 name "NOT NULL"
+        varchar255 slug "UNIQUE, NOT NULL"
+        text description "nullable"
+        uuid parent_id "FK categories.id, nullable"
+        boolean is_active "DEFAULT true"
+        integer sort_order "DEFAULT 0"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    attribute_definitions {
+        uuid id PK
+        uuid category_id "FK categories.id, NOT NULL"
+        varchar255 name "NOT NULL"
+        varchar255 slug "NOT NULL"
+        enum attribute_type "NOT NULL"
+        boolean is_required "DEFAULT false"
+        boolean is_filterable "DEFAULT false"
+        jsonb options "nullable"
+        integer sort_order "DEFAULT 0"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    products {
+        uuid id PK
+        varchar255 name "NOT NULL"
+        varchar255 slug "UNIQUE, NOT NULL"
+        text description "nullable"
+        uuid category_id "FK categories.id, NOT NULL"
+        numeric_12_2 base_price "NOT NULL"
+        enum status "DEFAULT draft"
+        jsonb attributes "DEFAULT {}, GIN-indexed"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    product_images {
+        uuid id PK
+        uuid product_id "FK products.id, CASCADE"
+        text url "NOT NULL"
+        varchar255 alt_text "nullable"
+        integer sort_order "DEFAULT 0"
+        timestamptz created_at
+    }
+
+    tags {
+        uuid id PK
+        varchar100 name "NOT NULL"
+        varchar100 slug "UNIQUE, NOT NULL"
+    }
+
+    product_tags {
+        uuid product_id "FK products.id, CASCADE"
+        uuid tag_id "FK tags.id, CASCADE"
+    }
 ```
-categories (self-referencing)
-    │
-    ├── 1:N ── attribute_definitions
-    │
-    └── 1:N ── products
-                    │
-                    ├── 1:N ── product_images
-                    │
-                    └── N:M ── tags (via product_tags)
-```
 
-### Tables
+### Table Details
 
-**categories**
-- `id` — UUID primary key
-- `name` — display name
-- `slug` — URL-friendly unique identifier (auto-generated)
-- `description` — optional text
-- `parent_id` — FK to `categories.id` (NULL = root category)
-- `is_active` — soft-delete flag
-- `sort_order` — display ordering
-- `created_at`, `updated_at` — timestamps
+#### `categories`
 
-**attribute_definitions** — defines what dynamic fields a category supports
-- `id` — UUID primary key
-- `category_id` — FK to `categories.id`
-- `name`, `slug` — attribute name and slug (unique per category)
-- `attribute_type` — enum: `text`, `number`, `boolean`, `select`, `multi_select`
-- `is_required` — whether products must provide this attribute
-- `is_filterable` — whether this attribute can be used as a filter
-- `options` — JSONB array of allowed values (for select/multi_select)
-- `sort_order` — display ordering
+Self-referencing hierarchical table. Root categories have `parent_id = NULL`.
 
-**products**
-- `id` — UUID primary key
-- `name`, `slug` — product name and unique slug
-- `description` — optional text
-- `category_id` — FK to `categories.id`
-- `base_price` — decimal(12,2)
-- `status` — enum: `draft`, `active`, `archived`
-- `attributes` — JSONB object storing dynamic attribute values (GIN-indexed)
-- `created_at`, `updated_at` — timestamps
+- `id` — `UUID` PRIMARY KEY, auto-generated
+- `name` — `VARCHAR(255)` NOT NULL
+- `slug` — `VARCHAR(255)` UNIQUE NOT NULL, auto-generated from name
+- `description` — `TEXT`, nullable
+- `parent_id` — `UUID` FK → `categories.id` ON DELETE SET NULL, nullable, indexed
+- `is_active` — `BOOLEAN` DEFAULT `true`, used for soft deletes
+- `sort_order` — `INTEGER` DEFAULT `0`
+- `created_at` — `TIMESTAMPTZ`, auto-set on creation
+- `updated_at` — `TIMESTAMPTZ`, auto-set on creation and update
 
-**product_images** — ordered images per product
-- `id`, `product_id`, `url`, `alt_text`, `sort_order`, `created_at`
+#### `attribute_definitions`
 
-**tags** / **product_tags** — many-to-many tagging
+Defines what dynamic fields a category supports. Subcategories inherit parent definitions.
+
+- `id` — `UUID` PRIMARY KEY, auto-generated
+- `category_id` — `UUID` FK → `categories.id` ON DELETE CASCADE, NOT NULL, indexed
+- `name` — `VARCHAR(255)` NOT NULL
+- `slug` — `VARCHAR(255)` NOT NULL, auto-generated from name (separator: `_`)
+- `attribute_type` — `ENUM('text','number','boolean','select','multi_select')` NOT NULL
+- `is_required` — `BOOLEAN` DEFAULT `false`
+- `is_filterable` — `BOOLEAN` DEFAULT `false`
+- `options` — `JSONB`, nullable, stores allowed values for `select`/`multi_select` (e.g. `["Red","Blue"]`)
+- `sort_order` — `INTEGER` DEFAULT `0`
+- `created_at` — `TIMESTAMPTZ`, auto-set on creation
+- `updated_at` — `TIMESTAMPTZ`, auto-set on creation and update
+- **Constraint**: `UNIQUE(category_id, slug)`
+
+#### `products`
+
+- `id` — `UUID` PRIMARY KEY, auto-generated
+- `name` — `VARCHAR(255)` NOT NULL
+- `slug` — `VARCHAR(255)` UNIQUE NOT NULL, auto-generated from name
+- `description` — `TEXT`, nullable
+- `category_id` — `UUID` FK → `categories.id` ON DELETE RESTRICT, NOT NULL, indexed
+- `base_price` — `NUMERIC(12,2)` NOT NULL
+- `status` — `ENUM('draft','active','archived')` DEFAULT `'draft'`
+- `attributes` — `JSONB` DEFAULT `'{}'`, stores dynamic attribute key-value pairs
+- `created_at` — `TIMESTAMPTZ`, auto-set on creation
+- `updated_at` — `TIMESTAMPTZ`, auto-set on creation and update
+- **Index**: GIN index on `attributes` column for fast JSONB filtering
+
+#### `product_images`
+
+- `id` — `UUID` PRIMARY KEY, auto-generated
+- `product_id` — `UUID` FK → `products.id` ON DELETE CASCADE, NOT NULL, indexed
+- `url` — `TEXT` NOT NULL
+- `alt_text` — `VARCHAR(255)`, nullable
+- `sort_order` — `INTEGER` DEFAULT `0`
+- `created_at` — `TIMESTAMPTZ`, auto-set on creation
+
+#### `tags`
+
+- `id` — `UUID` PRIMARY KEY, auto-generated
+- `name` — `VARCHAR(100)` NOT NULL
+- `slug` — `VARCHAR(100)` UNIQUE NOT NULL, auto-generated from name
+
+#### `product_tags` (join table)
+
+- `product_id` — `UUID` FK → `products.id` ON DELETE CASCADE
+- `tag_id` — `UUID` FK → `tags.id` ON DELETE CASCADE
+- **Constraint**: composite PRIMARY KEY `(product_id, tag_id)`
 
 ## Attribute Inheritance
 
@@ -177,7 +264,7 @@ When a subcategory is created under a parent, it **inherits all attribute defini
 ### How it works
 
 1. Walk from root → current category via `parent_id`
-2. Collect `attribute_definitions` from each level
+2. Collect `attribute_definitions` from each ancestor (root → leaf order)
 3. If a child defines an attribute with the **same slug** as an ancestor, the child's definition **overrides** it
 4. The merged list = **effective attributes** for that category
 
@@ -199,70 +286,577 @@ Effective attributes for **Smartphones**:
 
 When creating a product in Smartphones, all required inherited attributes must be provided.
 
-### API endpoint
-
-```
-GET /api/v1/categories/{id}/attributes
-```
-
-Returns the full effective attribute list, with `inherited_from_category_id` indicating the source.
-
 ## API Reference
+
+Base URL: `http://localhost:8000`
+
+All request/response bodies are JSON. UUIDs are strings in `"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"` format.
+
+### Error Responses
+
+All errors return a consistent format:
+
+```json
+{"detail": "Error message"}
+```
+
+Attribute validation errors return:
+
+```json
+{"detail": {"attribute_errors": ["Missing required attribute: 'brand'", "Attribute 'color' must be one of: ['Red', 'Blue']"]}}
+```
+
+---
 
 ### Categories
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/categories` | Create a category |
-| GET | `/api/v1/categories` | List categories (add `?tree=true` for nested tree) |
-| GET | `/api/v1/categories/{id}` | Get a single category |
-| PUT | `/api/v1/categories/{id}` | Update a category |
-| DELETE | `/api/v1/categories/{id}` | Soft-delete (deactivate) a category |
-| GET | `/api/v1/categories/{id}/children` | Get direct child categories |
-| GET | `/api/v1/categories/{id}/ancestors` | Get ancestor chain (breadcrumb) |
-| GET | `/api/v1/categories/{id}/attributes` | Get effective attributes (own + inherited) |
+#### `POST /api/v1/categories` — Create category
+
+**Request body:**
+
+```json
+{
+  "name": "Electronics",
+  "description": "All electronic products",
+  "parent_id": null,
+  "is_active": true,
+  "sort_order": 0
+}
+```
+
+- `name` (string, **required**) — 1–255 characters
+- `description` (string, optional)
+- `parent_id` (uuid, optional) — set to create a subcategory
+- `is_active` (boolean, optional) — default `true`
+- `sort_order` (integer, optional) — default `0`
+
+**Response:** `201 Created`
+
+```json
+{
+  "id": "a1b2c3d4-...",
+  "name": "Electronics",
+  "slug": "electronics",
+  "description": "All electronic products",
+  "parent_id": null,
+  "is_active": true,
+  "sort_order": 0,
+  "created_at": "2026-05-13T07:00:00Z",
+  "updated_at": "2026-05-13T07:00:00Z"
+}
+```
+
+**Errors:** `404` if `parent_id` doesn't exist, `422` if validation fails
+
+---
+
+#### `GET /api/v1/categories` — List categories
+
+**Query parameters:**
+
+- `tree` (boolean, optional) — if `true`, returns nested tree starting from root categories
+
+**Response (flat, `tree=false`):** `200 OK`
+
+```json
+{
+  "items": [ { "id": "...", "name": "...", "slug": "...", ... } ],
+  "total": 25
+}
+```
+
+**Response (tree, `tree=true`):** `200 OK`
+
+```json
+[
+  {
+    "id": "...",
+    "name": "Electronics",
+    "slug": "electronics",
+    "parent_id": null,
+    "children": [
+      {
+        "id": "...",
+        "name": "Phones",
+        "slug": "phones",
+        "children": [ ... ]
+      }
+    ]
+  }
+]
+```
+
+---
+
+#### `GET /api/v1/categories/{id}` — Get single category
+
+**Response:** `200 OK` — same shape as the create response
+
+**Errors:** `404` if not found
+
+---
+
+#### `PUT /api/v1/categories/{id}` — Update category
+
+**Request body:** all fields optional (only provided fields are updated)
+
+```json
+{
+  "name": "New Name",
+  "description": "Updated description",
+  "parent_id": "<uuid>",
+  "is_active": false,
+  "sort_order": 5
+}
+```
+
+**Response:** `200 OK` — updated category object
+
+**Errors:** `400` if self-referencing or circular parent, `404` if not found
+
+---
+
+#### `DELETE /api/v1/categories/{id}` — Soft-delete category
+
+Sets `is_active = false`. Does not remove the record.
+
+**Response:** `204 No Content`
+
+**Errors:** `404` if not found
+
+---
+
+#### `GET /api/v1/categories/{id}/children` — Get direct children
+
+**Response:** `200 OK`
+
+```json
+[
+  { "id": "...", "name": "Phones", "slug": "phones", "parent_id": "<parent-uuid>", ... },
+  { "id": "...", "name": "Laptops", "slug": "laptops", "parent_id": "<parent-uuid>", ... }
+]
+```
+
+---
+
+#### `GET /api/v1/categories/{id}/ancestors` — Get ancestor chain
+
+Returns ancestors in root-first order (breadcrumb path).
+
+**Response:** `200 OK`
+
+```json
+[
+  { "id": "...", "name": "Electronics", ... },
+  { "id": "...", "name": "Phones", ... }
+]
+```
+
+Returns `[]` for root categories.
+
+---
+
+#### `GET /api/v1/categories/{id}/attributes` — Get effective attributes
+
+Returns merged attribute definitions including inherited ones.
+
+**Response:** `200 OK`
+
+```json
+[
+  {
+    "id": "...",
+    "category_id": "<electronics-uuid>",
+    "name": "Brand",
+    "slug": "brand",
+    "attribute_type": "text",
+    "is_required": true,
+    "is_filterable": true,
+    "options": null,
+    "sort_order": 0,
+    "created_at": "...",
+    "updated_at": "...",
+    "inherited_from_category_id": "<electronics-uuid>"
+  },
+  {
+    "id": "...",
+    "category_id": "<phones-uuid>",
+    "name": "Storage",
+    "slug": "storage",
+    "attribute_type": "select",
+    "is_required": true,
+    "is_filterable": false,
+    "options": ["64GB", "128GB", "256GB"],
+    "sort_order": 0,
+    "created_at": "...",
+    "updated_at": "...",
+    "inherited_from_category_id": null
+  }
+]
+```
+
+- `inherited_from_category_id` — UUID of the ancestor category this attribute was inherited from, or `null` if the attribute belongs to this category directly
+
+---
 
 ### Attribute Definitions
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/categories/{id}/attributes` | Add attribute to category |
-| PUT | `/api/v1/categories/{id}/attributes/{attr_id}` | Update attribute |
-| DELETE | `/api/v1/categories/{id}/attributes/{attr_id}` | Remove attribute |
+#### `POST /api/v1/categories/{id}/attributes` — Create attribute
+
+**Request body:**
+
+```json
+{
+  "name": "Color",
+  "attribute_type": "select",
+  "is_required": false,
+  "is_filterable": true,
+  "options": ["Red", "Blue", "Green"],
+  "sort_order": 0
+}
+```
+
+- `name` (string, **required**) — 1–255 characters
+- `attribute_type` (string, **required**) — one of: `text`, `number`, `boolean`, `select`, `multi_select`
+- `is_required` (boolean, optional) — default `false`
+- `is_filterable` (boolean, optional) — default `false`
+- `options` (array of strings, optional) — **required** when `attribute_type` is `select` or `multi_select`
+- `sort_order` (integer, optional) — default `0`
+
+**Response:** `201 Created`
+
+```json
+{
+  "id": "...",
+  "category_id": "<category-uuid>",
+  "name": "Color",
+  "slug": "color",
+  "attribute_type": "select",
+  "is_required": false,
+  "is_filterable": true,
+  "options": ["Red", "Blue", "Green"],
+  "sort_order": 0,
+  "created_at": "...",
+  "updated_at": "..."
+}
+```
+
+**Errors:** `400` if select/multi_select without options, `404` if category not found, `409` if duplicate slug in category
+
+---
+
+#### `PUT /api/v1/categories/{id}/attributes/{attr_id}` — Update attribute
+
+**Request body:** all fields optional
+
+```json
+{
+  "name": "Updated Name",
+  "is_required": true
+}
+```
+
+**Response:** `200 OK` — updated attribute object
+
+**Errors:** `404` if attribute not found in this category
+
+---
+
+#### `DELETE /api/v1/categories/{id}/attributes/{attr_id}` — Delete attribute
+
+**Response:** `204 No Content`
+
+**Errors:** `404` if attribute not found in this category
+
+---
 
 ### Products
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/products` | Create product (validates attributes) |
-| GET | `/api/v1/products` | List with filters (see below) |
-| GET | `/api/v1/products/search?q=` | Text search on name/description |
-| GET | `/api/v1/products/{id}` | Get single product |
-| PUT | `/api/v1/products/{id}` | Update product |
-| DELETE | `/api/v1/products/{id}` | Delete product |
+#### `POST /api/v1/products` — Create product
 
-**Product list filters:**
+Validates `attributes` against the category's effective attribute definitions (own + inherited).
+
+**Request body:**
+
+```json
+{
+  "name": "iPhone 15 Pro",
+  "description": "Latest Apple smartphone",
+  "category_id": "<smartphones-uuid>",
+  "base_price": 999.99,
+  "status": "active",
+  "attributes": {
+    "brand": "Apple",
+    "storage": "256GB"
+  }
+}
+```
+
+- `name` (string, **required**) — 1–255 characters
+- `description` (string, optional)
+- `category_id` (uuid, **required**)
+- `base_price` (number, **required**) — must be > 0
+- `status` (string, optional) — `draft` (default), `active`, or `archived`
+- `attributes` (object, optional) — key-value pairs matching the category's attribute definitions
+
+**Attribute validation rules:**
+- All `is_required` attributes must be present
+- `text` attributes must be strings
+- `number` attributes must be numbers (int or float)
+- `boolean` attributes must be booleans
+- `select` values must be one of the defined `options`
+- `multi_select` values must be an array, each element in `options`
+- Unknown attribute keys are rejected
+
+**Response:** `201 Created`
+
+```json
+{
+  "id": "...",
+  "name": "iPhone 15 Pro",
+  "slug": "iphone-15-pro",
+  "description": "Latest Apple smartphone",
+  "category_id": "<smartphones-uuid>",
+  "base_price": 999.99,
+  "status": "active",
+  "attributes": { "brand": "Apple", "storage": "256GB" },
+  "images": [],
+  "tags": [],
+  "created_at": "...",
+  "updated_at": "..."
+}
+```
+
+**Errors:** `400` if attribute validation fails, `404` if category not found, `422` if body validation fails
+
+---
+
+#### `GET /api/v1/products` — List products (with filtering)
+
+**Query parameters:**
+
+- `category_id` (uuid, optional) — filter by category
+- `status` (string, optional) — `draft`, `active`, or `archived`
+- `min_price` (number, optional) — minimum price inclusive
+- `max_price` (number, optional) — maximum price inclusive
+- `attrs[<key>]=<value>` (string, optional) — filter by dynamic attribute value, can specify multiple
+- `limit` (integer, optional) — 1–100, default `20`
+- `offset` (integer, optional) — default `0`
+
+**Example:**
 
 ```
-GET /api/v1/products?category_id=<uuid>&status=active&min_price=100&max_price=500&attrs[color]=red&attrs[brand]=Apple&limit=20&offset=0
+GET /api/v1/products?category_id=<uuid>&status=active&min_price=500&max_price=1500&attrs[brand]=Apple&attrs[storage]=256GB&limit=10&offset=0
 ```
+
+**Response:** `200 OK`
+
+```json
+{
+  "items": [
+    {
+      "id": "...",
+      "name": "iPhone 15 Pro",
+      "slug": "iphone-15-pro",
+      "description": "...",
+      "category_id": "...",
+      "base_price": 999.99,
+      "status": "active",
+      "attributes": { "brand": "Apple", "storage": "256GB" },
+      "images": [],
+      "tags": [],
+      "created_at": "...",
+      "updated_at": "..."
+    }
+  ],
+  "total": 42,
+  "limit": 10,
+  "offset": 0
+}
+```
+
+---
+
+#### `GET /api/v1/products/search` — Text search
+
+**Query parameters:**
+
+- `q` (string, **required**) — search term (matches against product name and description, case-insensitive)
+- `limit` (integer, optional) — default `20`
+- `offset` (integer, optional) — default `0`
+
+**Response:** `200 OK` — same shape as product list response
+
+**Errors:** `422` if `q` is empty
+
+---
+
+#### `GET /api/v1/products/{id}` — Get single product
+
+**Response:** `200 OK` — full product object including images and tags
+
+**Errors:** `404` if not found
+
+---
+
+#### `PUT /api/v1/products/{id}` — Update product
+
+**Request body:** all fields optional (only provided fields are updated)
+
+```json
+{
+  "name": "iPhone 15 Pro Max",
+  "base_price": 1199.99,
+  "status": "active",
+  "attributes": { "brand": "Apple", "storage": "512GB" }
+}
+```
+
+If `attributes` is provided, it is re-validated against the category's effective attribute definitions.
+
+**Response:** `200 OK` — updated product object
+
+**Errors:** `400` if attribute validation fails, `404` if not found
+
+---
+
+#### `DELETE /api/v1/products/{id}` — Delete product
+
+Hard delete — permanently removes the product and its images.
+
+**Response:** `204 No Content`
+
+**Errors:** `404` if not found
+
+---
 
 ### Product Images
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/products/{id}/images` | Add image |
-| DELETE | `/api/v1/products/{id}/images/{image_id}` | Remove image |
-| PUT | `/api/v1/products/{id}/images/reorder` | Reorder images |
+#### `POST /api/v1/products/{id}/images` — Add image
+
+**Request body:**
+
+```json
+{
+  "url": "https://cdn.example.com/products/iphone15.jpg",
+  "alt_text": "iPhone 15 Pro front view",
+  "sort_order": 0
+}
+```
+
+- `url` (string, **required**)
+- `alt_text` (string, optional)
+- `sort_order` (integer, optional) — default `0`
+
+**Response:** `201 Created`
+
+```json
+{
+  "id": "...",
+  "product_id": "...",
+  "url": "https://cdn.example.com/products/iphone15.jpg",
+  "alt_text": "iPhone 15 Pro front view",
+  "sort_order": 0,
+  "created_at": "..."
+}
+```
+
+---
+
+#### `DELETE /api/v1/products/{id}/images/{image_id}` — Remove image
+
+**Response:** `204 No Content`
+
+**Errors:** `404` if image not found for this product
+
+---
+
+#### `PUT /api/v1/products/{id}/images/reorder` — Reorder images
+
+**Request body:**
+
+```json
+{
+  "image_ids": ["<third-image-uuid>", "<first-image-uuid>", "<second-image-uuid>"]
+}
+```
+
+Sets `sort_order` based on array position (0, 1, 2, ...).
+
+**Response:** `200 OK` — ordered list of image objects
+
+---
 
 ### Tags
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/tags` | Create tag |
-| GET | `/api/v1/tags` | List all tags |
-| POST | `/api/v1/products/{id}/tags` | Attach tag to product |
-| DELETE | `/api/v1/products/{id}/tags/{tag_id}` | Detach tag |
+#### `POST /api/v1/tags` — Create tag
+
+**Request body:**
+
+```json
+{ "name": "Featured" }
+```
+
+- `name` (string, **required**) — 1–100 characters
+
+**Response:** `201 Created`
+
+```json
+{ "id": "...", "name": "Featured", "slug": "featured" }
+```
+
+**Errors:** `409` if tag slug already exists
+
+---
+
+#### `GET /api/v1/tags` — List all tags
+
+**Response:** `200 OK`
+
+```json
+[
+  { "id": "...", "name": "Featured", "slug": "featured" },
+  { "id": "...", "name": "Sale", "slug": "sale" }
+]
+```
+
+---
+
+#### `POST /api/v1/products/{id}/tags` — Attach tag
+
+**Request body:**
+
+```json
+{ "tag_id": "<tag-uuid>" }
+```
+
+**Response:** `201 Created`
+
+```json
+{ "detail": "Tag attached" }
+```
+
+**Errors:** `404` if product or tag not found, `409` if tag already attached
+
+---
+
+#### `DELETE /api/v1/products/{id}/tags/{tag_id}` — Detach tag
+
+**Response:** `204 No Content`
+
+**Errors:** `404` if tag not attached to product
+
+---
+
+### Health Check
+
+#### `GET /health`
+
+**Response:** `200 OK`
+
+```json
+{ "status": "ok" }
+```
 
 ## Usage Examples
 
