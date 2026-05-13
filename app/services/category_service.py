@@ -28,6 +28,7 @@ async def create_category(db: AsyncSession, data: CategoryCreate) -> Category:
         name=data.name,
         slug=slug,
         description=data.description,
+        labels=data.labels,
         parent_id=data.parent_id,
         is_active=data.is_active,
         sort_order=data.sort_order,
@@ -143,3 +144,55 @@ async def _get_descendant_ids(db: AsyncSession, category_id: uuid.UUID) -> set[u
                 queue.append(cid)
 
     return descendants
+
+
+async def build_ref_path(db: AsyncSession, category_id: uuid.UUID) -> str:
+    """Build dotted reference path from root to this category, e.g. 'electronics.phones.smartphones'."""
+    ancestors = await get_ancestors(db, category_id)
+    category = await get_category(db, category_id)
+    parts = [a.slug for a in ancestors] + [category.slug]
+    return ".".join(parts)
+
+
+async def resolve_ref_path(db: AsyncSession, ref_path: str):
+    """
+    Resolve a dotted reference path to a category or product.
+    e.g. 'electronics.phones.smartphones' -> Category
+    e.g. 'electronics.phones.smartphones.iphone-15' -> Product
+    """
+    from app.models.product import Product
+
+    slugs = ref_path.strip().split(".")
+    if not slugs:
+        return None
+
+    # Walk the category chain
+    current_parent_id = None
+    resolved_category = None
+
+    for i, slug in enumerate(slugs):
+        query = select(Category).where(
+            Category.slug == slug,
+            Category.parent_id == current_parent_id if current_parent_id else Category.parent_id.is_(None),
+        )
+        result = await db.execute(query)
+        cat = result.scalar_one_or_none()
+
+        if cat:
+            resolved_category = cat
+            current_parent_id = cat.id
+        else:
+            # Last segment might be a product slug
+            if i == len(slugs) - 1 and resolved_category:
+                prod_result = await db.execute(
+                    select(Product).where(
+                        Product.slug == slug,
+                        Product.category_id == resolved_category.id,
+                    )
+                )
+                product = prod_result.scalar_one_or_none()
+                if product:
+                    return product
+            return None
+
+    return resolved_category

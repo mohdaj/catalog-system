@@ -12,6 +12,7 @@ from app.models.product import ProductStatus
 class ProductCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
+    labels: Optional[Dict[str, str]] = None
     category_id: uuid.UUID
     base_price: float = Field(..., gt=0)
     status: ProductStatus = ProductStatus.DRAFT
@@ -21,6 +22,7 @@ class ProductCreate(BaseModel):
 class ProductUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
+    labels: Optional[Dict[str, str]] = None
     category_id: Optional[uuid.UUID] = None
     base_price: Optional[float] = Field(None, gt=0)
     status: Optional[ProductStatus] = None
@@ -71,6 +73,8 @@ class ProductResponse(BaseModel):
     name: str
     slug: str
     description: Optional[str]
+    labels: Optional[Dict[str, str]] = None
+    ref_path: Optional[str] = None
     category_id: uuid.UUID
     base_price: float
     status: ProductStatus

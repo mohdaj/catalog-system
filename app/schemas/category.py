@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 class CategoryCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
+    labels: Optional[Dict[str, str]] = None
     parent_id: Optional[uuid.UUID] = None
     is_active: bool = True
     sort_order: int = 0
@@ -18,6 +19,7 @@ class CategoryCreate(BaseModel):
 class CategoryUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
+    labels: Optional[Dict[str, str]] = None
     parent_id: Optional[uuid.UUID] = None
     is_active: Optional[bool] = None
     sort_order: Optional[int] = None
@@ -30,6 +32,8 @@ class CategoryResponse(BaseModel):
     name: str
     slug: str
     description: Optional[str]
+    labels: Optional[Dict[str, str]] = None
+    ref_path: Optional[str] = None
     parent_id: Optional[uuid.UUID]
     is_active: bool
     sort_order: int

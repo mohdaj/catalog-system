@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -15,6 +15,7 @@ class AttributeDefinitionCreate(BaseModel):
     is_required: bool = False
     is_filterable: bool = False
     options: Optional[List[str]] = None  # For select / multi_select
+    labels: Optional[Dict[str, str]] = None
     sort_order: int = 0
 
 
@@ -24,6 +25,7 @@ class AttributeDefinitionUpdate(BaseModel):
     is_required: Optional[bool] = None
     is_filterable: Optional[bool] = None
     options: Optional[List[str]] = None
+    labels: Optional[Dict[str, str]] = None
     sort_order: Optional[int] = None
 
 
@@ -34,6 +36,7 @@ class AttributeDefinitionResponse(BaseModel):
     category_id: uuid.UUID
     name: str
     slug: str
+    labels: Optional[Dict[str, str]] = None
     attribute_type: AttributeType
     is_required: bool
     is_filterable: bool

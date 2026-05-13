@@ -46,6 +46,7 @@ class Product(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    labels: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     category_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("categories.id", ondelete="RESTRICT"), nullable=False, index=True
     )

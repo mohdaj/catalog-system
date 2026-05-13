@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -15,6 +16,7 @@ class Category(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    labels: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     parent_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("categories.id", ondelete="SET NULL"), nullable=True, index=True
     )

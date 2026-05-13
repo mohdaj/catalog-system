@@ -38,6 +38,7 @@ class AttributeDefinition(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(255), nullable=False)
+    labels: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     attribute_type: Mapped[AttributeType] = mapped_column(
         Enum(AttributeType, name="attribute_type_enum"), nullable=False
     )

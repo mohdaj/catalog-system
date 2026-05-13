@@ -74,13 +74,15 @@ async def engine():
 @pytest_asyncio.fixture
 async def db_session(engine):
     """Provide a transactional database session that rolls back after each test."""
+    from app.services.auth_service import seed_superadmin
+
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with session_factory() as session:
-        # Start a nested transaction so we can roll back after each test
         async with session.begin():
+            # Seed a default superadmin for auth tests
+            await seed_superadmin(session)
             yield session
-            # Rollback so each test starts clean
             await session.rollback()
 
 
