@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   getCategoryTree, createCategory, updateCategory, deleteCategory,
-  getCategoryAttributes, createAttribute, deleteAttribute,
+  getCategoryAttributes, createAttribute, updateAttribute, deleteAttribute, getCategoryAncestors,
 } from '../api/categories';
 import type { Category, AttributeDefinition } from '../types';
 
@@ -14,12 +14,19 @@ export default function CategoriesPage() {
   const [editForm, setEditForm] = useState({ name: '', description: '', labelEn: '', labelAr: '' });
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
   const [attrs, setAttrs] = useState<AttributeDefinition[]>([]);
-  const [attrForm, setAttrForm] = useState({ name: '', attribute_type: 'text', is_required: false, options: '' });
+  const [ancestors, setAncestors] = useState<Category[]>([]);
+  const [attrForm, setAttrForm] = useState({ name: '', attribute_type: 'text', is_required: false, is_filterable: false, options: '', labelEn: '', labelAr: '' });
+  const [editAttrId, setEditAttrId] = useState<string | null>(null);
+  const [editAttrForm, setEditAttrForm] = useState({ name: '', is_required: false, is_filterable: false, options: '' });
 
   const reload = () => getCategoryTree().then(setTree);
   useEffect(() => { reload(); }, []);
 
-  const loadAttrs = (catId: string) => { setSelectedCatId(catId); getCategoryAttributes(catId).then(setAttrs); };
+  const loadAttrs = (catId: string) => {
+    setSelectedCatId(catId);
+    getCategoryAttributes(catId).then(setAttrs);
+    getCategoryAncestors(catId).then(setAncestors);
+  };
 
   const mkLabels = (en: string, ar: string) => {
     const l: Record<string, string> = {}; if (en) l.en = en; if (ar) l.ar = ar;
@@ -46,9 +53,37 @@ export default function CategoriesPage() {
   const handleAddAttr = async (e: React.FormEvent) => {
     e.preventDefault(); if (!selectedCatId) return;
     const opts = attrForm.options.trim() ? attrForm.options.split(',').map(s => s.trim()) : undefined;
-    await createAttribute(selectedCatId, { name: attrForm.name, attribute_type: attrForm.attribute_type, is_required: attrForm.is_required, options: opts });
-    setAttrForm({ name: '', attribute_type: 'text', is_required: false, options: '' }); loadAttrs(selectedCatId);
+    await createAttribute(selectedCatId, {
+      name: attrForm.name, attribute_type: attrForm.attribute_type,
+      is_required: attrForm.is_required, options: opts,
+      labels: mkLabels(attrForm.labelEn, attrForm.labelAr),
+    });
+    setAttrForm({ name: '', attribute_type: 'text', is_required: false, is_filterable: false, options: '', labelEn: '', labelAr: '' });
+    loadAttrs(selectedCatId);
   };
+
+  const startEditAttr = (a: AttributeDefinition) => {
+    setEditAttrId(a.id);
+    setEditAttrForm({ name: a.name, is_required: a.is_required, is_filterable: a.is_filterable, options: a.options?.join(', ') || '' });
+  };
+
+  const saveEditAttr = async () => {
+    if (!editAttrId || !selectedCatId) return;
+    const opts = editAttrForm.options.trim() ? editAttrForm.options.split(',').map(s => s.trim()) : undefined;
+    await updateAttribute(selectedCatId, editAttrId, { name: editAttrForm.name, is_required: editAttrForm.is_required, is_filterable: editAttrForm.is_filterable, options: opts });
+    setEditAttrId(null); loadAttrs(selectedCatId);
+  };
+
+  const selectedCatName = (() => {
+    const find = (nodes: Category[]): string | null => {
+      for (const n of nodes) {
+        if (n.id === selectedCatId) return n.name;
+        if (n.children) { const r = find(n.children); if (r) return r; }
+      }
+      return null;
+    };
+    return find(tree);
+  })();
 
   return (
     <div className="flex gap-6">
@@ -81,24 +116,57 @@ export default function CategoriesPage() {
           )}
         </div>
       </div>
+
+      {/* Attributes panel */}
       {selectedCatId && (
-        <div className="w-96 bg-white border rounded p-4 h-fit sticky top-6">
-          <h2 className="font-bold mb-3">Attributes</h2>
+        <div className="w-[420px] bg-white border rounded p-4 h-fit sticky top-6">
+          {/* Breadcrumb */}
+          <div className="text-xs text-gray-400 mb-1">
+            {ancestors.map(a => a.name).concat(selectedCatName ? [selectedCatName] : []).join(' > ')}
+          </div>
+          <h2 className="font-bold mb-3">Attributes — {selectedCatName}</h2>
+
           {attrs.length === 0 ? <p className="text-gray-500 text-sm mb-3">No attributes.</p> : (
             <ul className="space-y-2 mb-4">{attrs.map(a => (
-              <li key={a.id} className="flex items-center justify-between text-sm border-b pb-1">
-                <div>
-                  <span className="font-medium">{a.name}</span> <span className="text-gray-400">({a.attribute_type})</span>
-                  {a.is_required && <span className="text-red-500 ml-1">*</span>}
-                  {a.inherited_from_category_id && <span className="text-xs text-purple-500 ml-1">inherited</span>}
-                  {a.options && <span className="text-xs text-gray-400 ml-1">[{a.options.join(', ')}]</span>}
-                </div>
-                {!a.inherited_from_category_id && <button onClick={() => { deleteAttribute(selectedCatId!, a.id).then(() => loadAttrs(selectedCatId!)); }} className="text-red-500 text-xs">remove</button>}
+              <li key={a.id} className="border-b pb-2">
+                {editAttrId === a.id ? (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded p-2 space-y-1 text-sm">
+                    <input value={editAttrForm.name} onChange={e => setEditAttrForm({ ...editAttrForm, name: e.target.value })} className="w-full border rounded px-2 py-1" />
+                    {a.options && <input placeholder="Options" value={editAttrForm.options} onChange={e => setEditAttrForm({ ...editAttrForm, options: e.target.value })} className="w-full border rounded px-2 py-1" />}
+                    <div className="flex gap-3">
+                      <label className="flex items-center gap-1"><input type="checkbox" checked={editAttrForm.is_required} onChange={e => setEditAttrForm({ ...editAttrForm, is_required: e.target.checked })} /> Required</label>
+                      <label className="flex items-center gap-1"><input type="checkbox" checked={editAttrForm.is_filterable} onChange={e => setEditAttrForm({ ...editAttrForm, is_filterable: e.target.checked })} /> Filterable</label>
+                    </div>
+                    <div className="flex gap-1">
+                      <button onClick={saveEditAttr} className="bg-green-600 text-white px-2 py-0.5 rounded text-xs">Save</button>
+                      <button onClick={() => setEditAttrId(null)} className="bg-gray-200 px-2 py-0.5 rounded text-xs">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between text-sm">
+                    <div>
+                      <span className="font-medium">{a.name}</span> <span className="text-gray-400">({a.attribute_type})</span>
+                      {a.is_required && <span className="text-red-500 ml-1">*req</span>}
+                      {a.is_filterable && <span className="text-blue-500 ml-1">filterable</span>}
+                      {a.inherited_from_category_id && <span className="text-xs text-purple-500 ml-1">inherited</span>}
+                      {a.options && <div className="text-xs text-gray-400">[{a.options.join(', ')}]</div>}
+                      {a.labels && <div className="text-xs text-gray-400">{Object.entries(a.labels).map(([k, v]) => `${k}:${v}`).join(' | ')}</div>}
+                    </div>
+                    {!a.inherited_from_category_id && (
+                      <span className="flex gap-1.5">
+                        <button onClick={() => startEditAttr(a)} className="text-blue-600 text-xs hover:underline">edit</button>
+                        <button onClick={() => { deleteAttribute(selectedCatId!, a.id).then(() => loadAttrs(selectedCatId!)); }} className="text-red-500 text-xs hover:underline">del</button>
+                      </span>
+                    )}
+                  </div>
+                )}
               </li>
             ))}</ul>
           )}
+
           <form onSubmit={handleAddAttr} className="space-y-2 border-t pt-3">
-            <input placeholder="Attribute name" value={attrForm.name} onChange={e => setAttrForm({ ...attrForm, name: e.target.value })} className="w-full border rounded px-2 py-1 text-sm" required />
+            <h3 className="text-sm font-semibold">Add Attribute</h3>
+            <input placeholder="Name" value={attrForm.name} onChange={e => setAttrForm({ ...attrForm, name: e.target.value })} className="w-full border rounded px-2 py-1 text-sm" required />
             <select value={attrForm.attribute_type} onChange={e => setAttrForm({ ...attrForm, attribute_type: e.target.value })} className="w-full border rounded px-2 py-1 text-sm">
               <option value="text">Text</option><option value="number">Number</option><option value="boolean">Boolean</option>
               <option value="select">Select</option><option value="multi_select">Multi Select</option>
@@ -106,7 +174,14 @@ export default function CategoriesPage() {
             {['select', 'multi_select'].includes(attrForm.attribute_type) && (
               <input placeholder="Options (comma separated)" value={attrForm.options} onChange={e => setAttrForm({ ...attrForm, options: e.target.value })} className="w-full border rounded px-2 py-1 text-sm" />
             )}
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={attrForm.is_required} onChange={e => setAttrForm({ ...attrForm, is_required: e.target.checked })} /> Required</label>
+            <div className="flex gap-3 text-sm">
+              <label className="flex items-center gap-1"><input type="checkbox" checked={attrForm.is_required} onChange={e => setAttrForm({ ...attrForm, is_required: e.target.checked })} /> Required</label>
+              <label className="flex items-center gap-1"><input type="checkbox" checked={attrForm.is_filterable} onChange={e => setAttrForm({ ...attrForm, is_filterable: e.target.checked })} /> Filterable</label>
+            </div>
+            <div className="grid grid-cols-2 gap-1">
+              <input placeholder="Label EN" value={attrForm.labelEn} onChange={e => setAttrForm({ ...attrForm, labelEn: e.target.value })} className="border rounded px-2 py-1 text-sm" />
+              <input placeholder="Label AR" value={attrForm.labelAr} onChange={e => setAttrForm({ ...attrForm, labelAr: e.target.value })} className="border rounded px-2 py-1 text-sm" dir="rtl" />
+            </div>
             <button type="submit" className="bg-blue-600 text-white px-3 py-1 rounded text-sm w-full">Add Attribute</button>
           </form>
         </div>
@@ -137,9 +212,9 @@ function CatTree({ nodes, onAddChild, onDelete, onEdit, onSelect, editId, editFo
             <div className={`flex items-center gap-1.5 text-sm rounded px-1 py-0.5 ${selId === c.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
               <span className="font-medium cursor-pointer" onClick={() => onSelect(c.id)}>{c.name}</span>
               <span className="text-xs text-gray-400">{c.slug}</span>
-              {c.labels && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 rounded">{Object.entries(c.labels).map(([k, v]) => `${k}:${v}`).join(' | ')}</span>}
+              {c.labels && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 rounded">{Object.entries(c.labels).map(([k, v]: any) => `${k}:${v}`).join(' | ')}</span>}
               {!c.is_active && <span className="text-xs text-red-500">(off)</span>}
-              <span className="ml-auto flex gap-1.5">
+              <span className="ml-auto flex gap-1.5 shrink-0">
                 <button onClick={() => onEdit(c)} className="text-xs text-blue-600 hover:underline">edit</button>
                 <button onClick={() => onAddChild(c.id)} className="text-xs text-green-600 hover:underline">+child</button>
                 <button onClick={() => onDelete(c.id)} className="text-xs text-red-500 hover:underline">off</button>

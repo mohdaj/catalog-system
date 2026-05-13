@@ -48,8 +48,27 @@ export async function deleteProduct(id: string): Promise<void> {
   await api.delete(`/products/${id}`);
 }
 
-export async function searchProducts(q: string, limit = 20): Promise<PaginatedResponse<Product>> {
-  const { data } = await api.get('/products/search', { params: { q, limit } });
+export async function searchProducts(q: string, limit = 20, offset = 0): Promise<PaginatedResponse<Product>> {
+  const { data } = await api.get('/products/search', { params: { q, limit, offset } });
+  return data;
+}
+
+// --- Product Images ---
+
+export async function addProductImage(
+  productId: string,
+  payload: { url: string; alt_text?: string; sort_order?: number },
+): Promise<any> {
+  const { data } = await api.post(`/products/${productId}/images`, payload);
+  return data;
+}
+
+export async function deleteProductImage(productId: string, imageId: string): Promise<void> {
+  await api.delete(`/products/${productId}/images/${imageId}`);
+}
+
+export async function reorderProductImages(productId: string, imageIds: string[]): Promise<any[]> {
+  const { data } = await api.put(`/products/${productId}/images/reorder`, { image_ids: imageIds });
   return data;
 }
 
