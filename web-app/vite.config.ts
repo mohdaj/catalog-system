@@ -7,9 +7,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://ubg-server:8000',
+        target: 'http://192.168.1.10:8000',
         changeOrigin: true,
-      },
+      }
     },
   },
 });

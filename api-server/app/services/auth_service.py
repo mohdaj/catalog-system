@@ -110,14 +110,24 @@ async def update_user(db: AsyncSession, user_id: uuid.UUID, data) -> User:
     return user
 
 
+async def delete_user(db: AsyncSession, user_id: uuid.UUID,user:User)  -> None:
+    """Update a user's email, role, active status, or password."""
+    if user.id == user_id:
+        raise HTTPException(status_code=409, detail="User can't delete their own account")
+    user = await get_user_by_id(db, user_id)
+    await db.delete(user)
+    await db.flush()
+
+
+
 async def seed_superadmin(db: AsyncSession) -> None:
     """Create a default superadmin if no users exist."""
     count = await get_user_count(db)
     if count == 0:
         user = User(
-            username="admin",
-            email="admin@catalog.local",
-            hashed_password=hash_password("admin123"),
+            username="ubg",
+            email="info@unauibike.sa",
+            hashed_password=hash_password("66452568"),
             role=UserRole.SUPERADMIN,
         )
         db.add(user)

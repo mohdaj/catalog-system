@@ -126,7 +126,7 @@ export default function ProductsPage() {
     <div>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">Products <span className="text-gray-400 text-base">({total})</span></h1>
-        <button onClick={() => setShowForm(!showForm)} className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">+ New Product</button>
+        {/*<button onClick={() => setShowForm(!showForm)} className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">+ New Product</button>*/}
       </div>
 
       {/* Filters */}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { listUsers, registerUser, updateUser } from '../api/auth';
+import {deleteUser, listUsers, registerUser, updateUser} from '../api/auth';
 import type { User } from '../types';
 
 export default function UsersPage() {
@@ -8,6 +8,7 @@ export default function UsersPage() {
   const [form, setForm] = useState({ username: '', email: '', password: '', role: 'admin' });
   const [error, setError] = useState('');
   const [editUser, setEditUser] = useState<User | null>(null);
+  const [deltUser, setDeltUser] = useState<User | null>(null);
   const [editForm, setEditForm] = useState({ email: '', role: '', is_active: true, password: '' });
   const [editError, setEditError] = useState('');
 
@@ -24,6 +25,7 @@ export default function UsersPage() {
 
   const startEdit = (u: User) => {
     setEditUser(u);
+    setDeltUser(u);
     setEditForm({ email: u.email, role: u.role, is_active: u.is_active, password: '' });
     setEditError('');
   };
@@ -36,6 +38,14 @@ export default function UsersPage() {
       if (editForm.password.trim()) payload.password = editForm.password;
       await updateUser(editUser.id, payload);
       setEditUser(null); reload();
+    } catch (err: any) { setEditError(err.response?.data?.detail || 'Failed to update user'); }
+  };
+  const saveDelet = async () => {
+    if (!deltUser) return;
+    setEditError('');
+    try {
+      await deleteUser(deltUser.id);
+      setDeltUser(null); reload();
     } catch (err: any) { setEditError(err.response?.data?.detail || 'Failed to update user'); }
   };
 
@@ -81,6 +91,7 @@ export default function UsersPage() {
             </label>
             <div className="flex gap-2 pt-2">
               <button onClick={saveEdit} className="bg-green-600 text-white px-4 py-2 rounded text-sm">Save</button>
+              <button onClick={saveDelet} className="bg-green-600 text-white px-4 py-2 rounded text-sm">delete</button>
               <button onClick={() => setEditUser(null)} className="bg-gray-200 px-4 py-2 rounded text-sm">Cancel</button>
             </div>
           </div>

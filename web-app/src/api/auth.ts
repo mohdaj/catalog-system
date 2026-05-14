@@ -33,3 +33,9 @@ export async function updateUser(
   const { data } = await api.put(`/auth/users/${id}`, payload);
   return data;
 }
+export async function deleteUser(
+    id: string,
+): Promise<{status:string}> {
+  const { data } = await api.delete(`/auth/users/${id}`);
+  return data;
+}

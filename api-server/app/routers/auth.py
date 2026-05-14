@@ -59,3 +59,11 @@ async def update_user(
 ):
     """Only superadmins can update users."""
     return await auth_service.update_user(db, user_id, data)
+@router.delete("/users/{user_id}", status_code=200)
+async def delete_user(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("superadmin")),
+):
+    """Only superadmins can update users."""
+    return await auth_service.delete_user(db, user_id,current_user)
